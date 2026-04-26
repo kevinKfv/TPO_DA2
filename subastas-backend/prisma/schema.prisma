@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Models
+enum Category {
+  comun
+  especial
+  plata
+  oro
+  platino
+}
+
+enum RegistrationStage {
+  stage1
+  stage2
+}
+
+model User {
+  id              String            @id @default(uuid())
+  email           String            @unique
+  password        String?           // Nullable since it is set in stage 2
+  firstName       String
+  lastName        String
+  documentFront   String
+  documentBack    String
+  address         String
+  country         String
+  stage           RegistrationStage @default(stage1)
+  category        Category          @default(comun)
+  isVerified      Boolean           @default(false)
+  balance         Float             @default(0) // Used for cheque guarantee
+  
+  paymentMethods  PaymentMethod[]
+  itemsOwned      Item[]            @relation("OwnedItems")
+  bids            Bid[]
+  auctionPurchases Item[]           @relation("BoughtItems")
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+enum PaymentType {
+  bank
+  credit_card
+  check
+}
+
+model PaymentMethod {
+  id            String      @id @default(uuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  type          PaymentType
+  details       String      // e.g. "Visa ending in 1234"
+  isVerified    Boolean     @default(false)
+  limit         Float?      // E.g. limit for a certified check
+
+  createdAt     DateTime    @default(now())
+}
+
+enum Currency {
+  ARS
+  USD
+}
+
+enum AuctionStatus {
+  planned
+  active
+  closed
+}
+
+model Auction {
+  id            String        @id @default(uuid())
+  title         String
+  date          DateTime
+  categoryRequired Category   @default(comun)
+  currency      Currency      @default(ARS)
+  status        AuctionStatus @default(planned)
+  auctioneer    String
+
+  items         Item[]
+  bids          Bid[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum ItemStatus {
+  pending
+  accepted
+  rejected
+  in_auction
+  sold
+}
+
+model Item {
+  id            String      @id @default(uuid())
+  title         String
+  description   String
+  basePrice     Float
+  images        String[]    // Array of image URIs/URLs
+  artist        String?
+  history       String?     // History context
+  
+  status        ItemStatus  @default(pending)
+  rejectionReason String?
+
+  ownerId       String
+  owner         User        @relation("OwnedItems", fields: [ownerId], references: [id])
+  
+  auctionId     String?
+  auction       Auction?    @relation(fields: [auctionId], references: [id])
+  
+  buyerId       String?
+  buyer         User?       @relation("BoughtItems", fields: [buyerId], references: [id])
+  soldPrice     Float?
+
+  bids          Bid[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Bid {
+  id            String      @id @default(uuid())
+  amount        Float
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  itemId        String
+  item          Item        @relation(fields: [itemId], references: [id])
+  auctionId     String
+  auction       Auction     @relation(fields: [auctionId], references: [id])
+  
+  createdAt     DateTime    @default(now())
+}
