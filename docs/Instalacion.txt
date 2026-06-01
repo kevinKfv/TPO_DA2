@@ -1,0 +1,8 @@
+BackEnd
+npm install express
+npm install -D typescript @types/node @types/express ts-node nodemon
+
+Base de datos
+npm install mssql
+npm install --save-dev @types/node ts-node typescript
+npm i --save-dev @types/mssql
