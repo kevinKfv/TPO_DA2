@@ -25,7 +25,7 @@ async function main() {
 */
   await prisma.fotos.update({
     where: {
-      identificador: 4
+      identificador: 1
     },
     data: {
       foto: buffer

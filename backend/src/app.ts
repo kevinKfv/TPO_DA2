@@ -8,6 +8,7 @@ import paisesRoutes from './modulos/paises/paises.routes';
 import { articulosRoutes } from './modulos/articulos/articulos.routes';
 import { pagosRoutes } from './modulos/pagos/pagos.routes';
 import { notificacionesRoutes } from './modulos/notificaciones/notificaciones.routes';
+import catalogoRoutes from './modulos/catalogo/catalogo.routes';
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use('/api/paises', paisesRoutes);
 app.use('/api/autenticacion', autenticacionRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/subastas', subastasRoutes);
+app.use('/api/catalogos', catalogoRoutes)
 app.use('/api/pujos', pujosRoutes);
 app.use('/api/articulos', articulosRoutes);
 app.use('/api/pagos', pagosRoutes);

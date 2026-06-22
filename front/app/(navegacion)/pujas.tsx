@@ -1,122 +1,158 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
-import { Clock } from 'lucide-react-native';
-import { Image } from 'expo-image';
+import { TrendingUp, Award, DollarSign, BarChart2 } from 'lucide-react-native';
 import { useAuth } from '@/context/AuthContext';
 import { apiGet } from '@/app/lib/api';
+import SelectorDesplegable from '@/components/SelectorDesplegable';
+import FilaArticulo from '@/components/FilaArticulo';
+import TarjetaMetrica from '@/components/metricas/TarjetaMetrica';
+import GraficoBarras from '@/components/metricas/GraficoBarras';
+import GraficoTorta from '@/components/metricas/GraficoTorta';
+
+type TipoFiltro = 'todas' | 'ganadas' | 'perdidas';
 
 export default function Bids() {
-  const { token, isAuthenticated } = useAuth();
-  const [bids, setBids] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { token } = useAuth();
+  const [pujas, setPujas] = useState<any[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [cargandoEstadisticas, setCargandoEstadisticas] = useState(true);
+  const [filtro, setFiltro] = useState<TipoFiltro>('todas');
+  const [desplegableAbierto, setDesplegableAbierto] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
-  useFocusEffect(useCallback(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, []));
+
+  useFocusEffect(
+    useCallback(() => { 
+      scrollRef.current?.scrollTo({ y: 0, animated: false }); 
+    }, [])
+  );
+  
+  const [metricas, setMetricas] = useState({
+    totalBids: 0,
+    auctionsWon: 0,
+    totalSpent: 0,
+    winRate: 0,
+    monthlyInvestment: [] as Array<{ mes: string; total: number }>,
+  });
 
   useEffect(() => {
-    const fetchBids = async () => {
+    const obtenerEstadisticas = async () => {
       try {
         if (!token) return;
-        const res = await apiGet('/pujos/mis-pujos', token);
-        if (res && Array.isArray(res)) {
-          // Agrupamos por catalogItem para no mostrar duplicados si el usuario pujó varias veces en el mismo artículo
-          const uniqueItems = new Map();
-          res.forEach(bid => {
-            const item = bid.catalogItem;
-            if (!item) return;
-            
-            if (!uniqueItems.has(item.id)) {
-              uniqueItems.set(item.id, {
-                id: item.auctionId, // Link to auction details or live view
-                title: item.title,
-                currentBid: item.currentPrice,
-                myBid: bid.amount,
-                status: bid.amount >= item.currentPrice ? 'winning' : 'outbid',
-                timeLeft: 'Termina pronto',
-                image: 'https://images.unsplash.com/photo-1742240439165-60790db1ee93?auto=format&fit=crop&w=500&q=60',
-              });
-            } else {
-              // If we already have it, keep the highest of our bids
-              const existing = uniqueItems.get(item.id);
-              if (bid.amount > existing.myBid) {
-                existing.myBid = bid.amount;
-                existing.status = bid.amount >= item.currentPrice ? 'winning' : 'outbid';
-              }
-            }
+        setCargandoEstadisticas(true);
+        const datos = await apiGet('/usuarios/yo/estadisticas', token);
+        if (datos) {
+          setMetricas({
+            totalBids: datos.totalBids ?? 0,
+            auctionsWon: datos.auctionsWon ?? 0,
+            totalSpent: datos.totalSpent ?? 0,
+            winRate: datos.winRate ?? 0,
+            monthlyInvestment: datos.monthlyInvestment || []
           });
-          setBids(Array.from(uniqueItems.values()));
         }
       } catch (error) {
-        console.warn("Error al obtener pujas", error);
+        console.warn("Error al traer estadísticas", error);
       } finally {
-        setLoading(false);
+        setCargandoEstadisticas(false);
       }
     };
-    fetchBids();
+    obtenerEstadisticas();
   }, [token]);
 
-  if (loading) {
-    return (
-      <View className="flex-1 justify-center items-center bg-gray-50">
-        <ActivityIndicator size="large" color="#6A4F99" />
-      </View>
-    );
-  }
+  useEffect(() => {
+    const obtenerPujas = async () => {
+      try {
+        if (!token) return;
+        setCargando(true);
+        const res = await apiGet(`/pujos/mis-pujos?filter=${filtro}`, token);
+        if (res && Array.isArray(res)) {
+          setPujas(res);
+        }
+      } catch (error) {
+        console.warn("Error al filtrar las pujas", error);
+      } finally {
+        setCargando(false);
+      }
+    };
+    obtenerPujas();
+  }, [token, filtro]);
 
   return (
-    <ScrollView ref={scrollRef} className="flex-1 bg-gray-50 p-4">
-      <View className="mb-6">
-        <Text className="text-2xl font-bold text-[#333F48]">Mis Pujas Activas</Text>
-        <Text className="text-sm text-[#A08C79] mt-1">Seguimiento de las subastas en las que participás</Text>
+    <ScrollView ref={scrollRef} className="flex-1 bg-white px-5" showsVerticalScrollIndicator={false}>
+      
+      {/* Encabezado */}
+      <View className="mt-8 mb-6">
+        <Text className="text-3xl font-bold text-[#333F48] tracking-tight">Mis Pujas</Text>
+        <Text className="text-sm text-[#A08C79] mt-1.5">
+          Historial completo de participaciones y estadísticas
+        </Text>
       </View>
 
-      <View className="gap-4 mb-8">
-        {bids.map((bid, index) => (
-          <Link key={index} href={`/subastas/${bid.id}`} asChild>
-            <TouchableOpacity className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex-row h-32">
-              <Image source={{ uri: bid.image }} className="w-1/3 h-full" contentFit="cover" />
-              <View className="p-3 flex-1 justify-between">
-                <View>
-                  <Text className="font-semibold text-base text-[#333F48] mb-1" numberOfLines={1}>
-                    {bid.title}
-                  </Text>
-                  <View className="flex-row items-center">
-                    <Clock size={12} color="#A08C79" />
-                    <Text className="text-xs text-[#A08C79] ml-1">Faltan {bid.timeLeft}</Text>
-                  </View>
-                </View>
-                <View>
-                  <View className="flex-row justify-between items-end mb-1">
-                    <Text className="text-xs text-slate-500">Puja actual:</Text>
-                    <Text className="text-sm font-bold text-[#333F48]">${bid.currentBid}</Text>
-                  </View>
-                  <View className="flex-row justify-between items-center">
-                    <Text className="text-xs text-slate-500">Mi puja:</Text>
-                    <View className={`px-2 py-1 rounded-full ${bid.status === 'winning' ? 'bg-green-100' : 'bg-red-100'}`}>
-                      <Text className={`text-xs font-medium ${bid.status === 'winning' ? 'text-green-700' : 'text-red-700'}`}>
-                        ${bid.myBid} {bid.status === 'winning' ? '(Ganando)' : '(Superada)'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
-          </Link>
-        ))}
-        {!isAuthenticated ? (
-          <View className="items-center justify-center py-12">
-            <Text className="text-gray-500 mb-4 text-center">Iniciá sesión para ver tu historial de pujas.</Text>
-            <Link href="/(autenticacion)/iniciar-sesion" asChild>
-              <TouchableOpacity className="bg-[#6A4F99] px-6 py-3 rounded-xl">
-                <Text className="text-white font-bold">Iniciar Sesión</Text>
-              </TouchableOpacity>
-            </Link>
+      {/* Grid de Métricas */}
+      {cargandoEstadisticas ? (
+        <ActivityIndicator size="small" color="#6A4F99" className="py-6" />
+      ) : (
+        <View className="mb-6">
+          <View className="flex-row gap-3 mb-3">
+            <TarjetaMetrica 
+              titulo="Total Participaciones" 
+              valor={metricas.totalBids} 
+              icono={<TrendingUp size={20} color="#6A4F99" />} 
+            />
+            <TarjetaMetrica 
+              titulo="Subastas Ganadas" 
+              valor={metricas.auctionsWon} 
+              icono={<Award size={20} color="#C9A063" />} 
+            />
           </View>
-        ) : bids.length === 0 ? (
-          <View className="items-center justify-center py-12">
-            <Text className="text-gray-500">No tenés pujas activas.</Text>
+          <View className="flex-row gap-3">
+            <TarjetaMetrica 
+              titulo="Total Invertido" 
+              valor={`$${metricas.totalSpent.toLocaleString('es-AR')}`} 
+              icono={<DollarSign size={20} color="#A08C79" />} 
+            />
+            <TarjetaMetrica 
+              titulo="Tasa de Éxito" 
+              valor={`${metricas.winRate}%`} 
+              icono={<BarChart2 size={20} color="#6A4F99" />} 
+            />
           </View>
-        ) : null}
+        </View>
+      )}
+
+      {/* Gráficos Analíticos */}
+      {!cargandoEstadisticas && metricas.monthlyInvestment.length > 0 && (
+        <GraficoBarras datos={metricas.monthlyInvestment} />
+      )}
+      <GraficoTorta />
+
+      {/* Historial de Pujas */}
+      <View className="mb-12">
+        <View className="flex-row justify-between items-center mb-4">
+          <Text className="text-xl font-bold text-[#333F48]">Historial de Pujas</Text>
+          <SelectorDesplegable 
+            filtroActual={filtro}
+            desplegableAbierto={desplegableAbierto}
+            onAlternarDesplegable={() => setDesplegableAbierto(!desplegableAbierto)}
+            onSeleccionarFiltro={(f) => { setFiltro(f); setDesplegableAbierto(false); }}
+            etiquetasFiltro={{ todas: 'Todas', ganadas: 'Ganadas', perdidas: 'Perdidas' }}
+          />
+        </View>
+
+        <View className="bg-white rounded-2xl border border-gray-100 p-2 shadow-sm">
+          <View className="flex-row justify-between py-3 px-2 border-b border-gray-50">
+            <Text className="text-xs font-bold text-gray-400 uppercase w-[65%]">Artículo</Text>
+            <Text className="text-xs font-bold text-gray-400 uppercase w-[35%] text-right">Tu Puja</Text>
+          </View>
+
+          {cargando ? (
+            <ActivityIndicator size="small" color="#6A4F99" className="py-10" />
+          ) : pujas.length === 0 ? (
+            <Text className="text-center text-gray-400 py-8 text-sm">No hay registros.</Text>
+          ) : (
+            pujas.map((puja, index) => <FilaArticulo key={puja.id ?? index} puja={puja} />)
+          )}
+        </View>
       </View>
     </ScrollView>
   );

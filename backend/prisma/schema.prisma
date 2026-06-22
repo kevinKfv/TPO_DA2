@@ -109,6 +109,7 @@ model extra_subastas {
   subasta       Int
   titulo        String   @db.VarChar(200)
   descripcion   String?  @db.VarChar(500)
+  fotoUrl       String?  @db.VarChar(1000)
   subastas      subastas @relation(fields: [subasta], references: [identificador], onUpdate: NoAction, map: "fk_extra_subastas_subastas")
 }
 

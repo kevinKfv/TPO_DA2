@@ -80,20 +80,80 @@ export class UsersService {
 
   async getUserStats(userId: string) {
     const id = parseInt(userId, 10);
-    
-    // Contar subastas donde este usuario participó (bids / pujos)
-    const pujos = await prisma.pujos.count({
-      where: { asistentes: { cliente: id } }
+    if (isNaN(id)) {
+      return { totalBids: 0, auctionsWon: 0, totalSpent: 0, winRate: 0, monthlyInvestment: [] };
+    }
+
+    // 1. Total de participaciones (Este se sigue midiendo desde la tabla de pujos/pujas activos)
+    const totalBids = await prisma.pujos.count({
+      where: { 
+        asistentes: { 
+          cliente: id 
+        } 
+      }
     });
 
-    const ganadas = await prisma.pujos.count({
-      where: { asistentes: { cliente: id }, ganador: 'si' }
+    // 2. Subastas Ganadas (Ahora es exacto: cuántas veces aparece en el registro definitivo)
+    const auctionsWon = await prisma.registroDeSubasta.count({
+      where: { 
+        cliente: id 
+      }
     });
+
+    // 3. Total Invertido (Suma directa de los importes finales del registro)
+    const registrosGanados = await prisma.registroDeSubasta.findMany({
+      where: { 
+        cliente: id 
+      },
+      select: { 
+        importe: true 
+      }
+    });
+    
+    const totalSpent = registrosGanados.reduce((acc, curr) => acc + Number(curr.importe), 0);
+    const winRate = totalBids > 0 ? parseFloat(((auctionsWon / totalBids) * 100).toFixed(1)) : 0;
+
+    // 4. Historial de Inversión Mensual (Últimos 3 meses basados en la fecha de la subasta)
+    const nombresMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const hoy = new Date();
+    const monthlyInvestment = [];
+
+    for (let i = 2; i >= 0; i--) {
+      const fechaTarget = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      const primerDiaMes = new Date(fechaTarget.getFullYear(), fechaTarget.getMonth(), 1);
+      const ultimoDiaMes = new Date(fechaTarget.getFullYear(), fechaTarget.getMonth() + 1, 0, 23, 59, 59);
+
+      // Buscamos en los registros definitivos filtrando por la fecha de la subasta asociada
+      const registrosMes = await prisma.registroDeSubasta.findMany({
+        where: {
+          cliente: id,
+          subastas: {
+            // NOTA: Ajustá 'fecha_fin' o 'fecha' según cómo se llame el campo de fecha en tu modelo 'subastas'
+            fecha: { 
+              gte: primerDiaMes,
+              lte: ultimoDiaMes
+            }
+          }
+        },
+        select: { 
+          importe: true 
+        }
+      });
+
+      const totalMes = registrosMes.reduce((acc, curr) => acc + Number(curr.importe), 0);
+
+      monthlyInvestment.push({
+        mes: nombresMeses[primerDiaMes.getMonth()],
+        total: totalMes
+      });
+    }
 
     return {
-      totalBids: pujos,
-      auctionsWon: ganadas,
-      itemsSold: 0,
+      totalBids,
+      auctionsWon,
+      totalSpent,
+      winRate,
+      monthlyInvestment
     };
   }
 

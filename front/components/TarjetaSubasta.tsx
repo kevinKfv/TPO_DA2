@@ -6,8 +6,6 @@ import { Image } from 'expo-image';
 import { Card } from '@/components/ui/Card';
 
 
-const IMAGEN_PLACEHOLDER_URL = "https://images.unsplash.com/photo-1609166816663-3dff820fc5fa?auto=format&fit=crop&w=800&q=80";
-
 interface TarjetaSubastaProps {
   subasta: {
     id: string | number;
@@ -28,12 +26,11 @@ export const TarjetaSubasta = ({ subasta, estaAutenticado }: TarjetaSubastaProps
   // Evaluamos si el backend no mandó nada o si mandó un texto vacío
   const usarFallback = 
     !subasta.imagen || 
-    subasta.imagen.trim() === "" || 
-    subasta.imagen.includes("placeholder");
+    subasta.imagen.trim() === "";
 
   // IMPORTANTE: Al ser un link de internet, SIEMPRE se pasa estructurado como { uri: string }
   const fuenteImagen = usarFallback 
-    ? { uri: IMAGEN_PLACEHOLDER_URL } 
+    ? require('../assets/images/imagen_placeholder.png')
     : { uri: subasta.imagen || ""};
 
   return (
@@ -44,7 +41,7 @@ export const TarjetaSubasta = ({ subasta, estaAutenticado }: TarjetaSubastaProps
           source={fuenteImagen} 
           contentFit="cover" // Se estira de forma uniforme cubriendo todo el recuadro
           className="w-full h-full"
-          transition={200}
+          transition={120} 
         />
       </View>
 
