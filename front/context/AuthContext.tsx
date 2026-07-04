@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { apiGet, apiPost, registrarManejadorSesionExpirada } from '@/app/lib/api';
@@ -38,7 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const loadUser = async () => {
       try {
         const storedUser = await AsyncStorage.getItem("user");
-        const storedToken = await SecureStore.getItemAsync("token");
+        const storedToken = Platform.OS === 'web'
+          ? await AsyncStorage.getItem("token")
+          : await SecureStore.getItemAsync("token").catch(() => null);
         if (storedUser) setUser(JSON.parse(storedUser));
         if (storedToken) setToken(storedToken);
       } catch (e) {
@@ -61,7 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(respUser);
       setToken(respToken);
       await AsyncStorage.setItem('user', JSON.stringify(respUser));
-      if (respToken) await SecureStore.setItemAsync('token', respToken);
+      if (respToken) {
+        if (Platform.OS === 'web') {
+          await AsyncStorage.setItem('token', respToken);
+        } else {
+          await SecureStore.setItemAsync('token', respToken).catch(() => {});
+        }
+      }
     } catch (error: any) {
       if (error.message?.includes('completar el registro')) {
         setPendingEmail(email);
@@ -75,7 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setPendingEmail(null);
     await AsyncStorage.removeItem('user');
-    await SecureStore.deleteItemAsync('token');
+    if (Platform.OS === 'web') {
+      await AsyncStorage.removeItem('token');
+    } else {
+      await SecureStore.deleteItemAsync('token').catch(() => {});
+    }
   }, []);
 
   useEffect(() => {

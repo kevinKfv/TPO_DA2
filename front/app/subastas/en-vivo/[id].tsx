@@ -73,6 +73,71 @@ export default function LiveAuction() {
     return () => clearInterval(interval);
   }, [endTime]);
 
+  const [catalogItems, setCatalogItems] = useState<any[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const loadItem = async (index: number, items: any[]) => {
+    if (!items || items.length === 0 || index < 0 || index >= items.length) return;
+    
+    // Desconectar del item anterior
+    if (activeItem) {
+      socketService.leaveAuction(activeItem.id);
+      socketService.offNewBid(handleNewBidRef.current);
+    }
+
+    const item = items[index];
+    setActiveItem(item);
+    setCurrentIndex(index);
+    
+    setCurrentItem(prev => ({
+      ...prev,
+      title: item.title,
+      currentBid: item.currentPrice,
+      basePrice: item.startingPrice,
+      image: item.image ? `${API_BASE_URL}${item.image}` : null,
+    }));
+
+    // Obtenemos las pujas de este artículo
+    const bidsRes = await fetch(`${API_URL}/api/pujos/item/${item.id}`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    });
+    if (bidsRes.ok) {
+      const bidsData = await bidsRes.json();
+      if (bidsData.length > 0) {
+        setCurrentItem(prev => ({
+          ...prev,
+          currentBid: bidsData[0].amount,
+          highestBidder: bidsData[0].user?.firstName ? `${bidsData[0].user.firstName}***` : 'Desconocido',
+        }));
+        setRecentBids(bidsData.slice(0, 5).map((b: any) => ({
+          user: b.user?.firstName ? `${b.user.firstName}***` : 'Desconocido',
+          amount: b.amount,
+          id: b.id
+        })));
+      } else {
+        setRecentBids([]);
+        setCurrentItem(prev => ({ ...prev, currentBid: item.startingPrice, highestBidder: 'Nadie — ¡Sé el primero!' }));
+      }
+    }
+
+    socketService.joinAuction(item.id, token ?? undefined);
+    socketService.onNewBid(handleNewBidRef.current);
+    setEsperandoOtroPujador(false);
+  };
+
+  const handleNewBidRef = React.useRef((bid: any) => {
+    setCurrentItem(prev => ({
+      ...prev,
+      currentBid: bid.amount,
+      highestBidder: bid.user?.firstName ? `${bid.user.firstName}***` : 'Desconocido',
+    }));
+    setRecentBids(prev =>
+      [{ user: bid.user?.firstName ? `${bid.user.firstName}***` : 'Desconocido', amount: bid.amount, id: bid.id || Date.now().toString() }, ...prev].slice(0, 5)
+    );
+    setEsperandoOtroPujador(false);
+    setEndTime(new Date(Date.now() + 60 * 1000));
+  });
+
   useEffect(() => {
     const fetchAuction = async () => {
       try {
@@ -80,51 +145,16 @@ export default function LiveAuction() {
         if (res.ok) {
           const data = await res.json();
           if (data.catalogItems && data.catalogItems.length > 0) {
-            const firstItem = data.catalogItems[0];
-            setActiveItem(firstItem);
-            
-            setCurrentItem(prev => ({
-              ...prev,
-              title: firstItem.title,
-              currentBid: firstItem.currentPrice,
-              basePrice: firstItem.startingPrice,
-              image: firstItem.image ? `${API_BASE_URL}${firstItem.image}` : null,
-            }));
+            setCatalogItems(data.catalogItems);
+            loadItem(0, data.catalogItems);
 
-            // Obtenemos las pujas de este artículo
-            const bidsRes = await fetch(`${API_URL}/api/pujos/item/${firstItem.id}`, {
-              headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-            });
-            if (bidsRes.ok) {
-              const bidsData = await bidsRes.json();
-              if (bidsData.length > 0) {
-                setCurrentItem(prev => ({
-                  ...prev,
-                  currentBid: bidsData[0].amount,
-                  highestBidder: bidsData[0].user?.firstName ? `${bidsData[0].user.firstName}***` : 'Desconocido',
-                }));
-                setRecentBids(bidsData.slice(0, 5).map((b: any) => ({
-                  user: b.user?.firstName ? `${b.user.firstName}***` : 'Desconocido',
-                  amount: b.amount,
-                  id: b.id
-                })));
-              } else {
-                setRecentBids([]);
-                setCurrentItem(prev => ({ ...prev, highestBidder: 'Nadie — ¡Sé el primero!' }));
-              }
-            }
-
-            // Registro automático a la subasta por si acaso
             if (token) {
               await fetch(`${API_URL}/api/subastas/${id}/registrar`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
-              }).catch(() => {}); // ignoramos errores (ej: ya registrado)
+              }).catch(() => {});
             }
-
-            // Conectamos el socket para este artículo (enviamos token para control de sesión única)
             socketService.connect();
-            socketService.joinAuction(firstItem.id, token ?? undefined);
           }
         }
       } catch (e) {
@@ -133,22 +163,7 @@ export default function LiveAuction() {
     };
     if (id) fetchAuction();
 
-    const handleNewBid = (bid: any) => {
-      setCurrentItem(prev => ({
-        ...prev,
-        currentBid: bid.amount,
-        highestBidder: bid.user?.firstName ? `${bid.user.firstName}***` : 'Desconocido',
-      }));
-      setRecentBids(prev =>
-        [{ user: bid.user?.firstName ? `${bid.user.firstName}***` : 'Desconocido', amount: bid.amount, id: bid.id || Date.now().toString() }, ...prev].slice(0, 5)
-      );
-      // Cualquier puja nueva (propia o ajena) libera el bloqueo de turno
-      setEsperandoOtroPujador(false);
-      setEndTime(new Date(Date.now() + 60 * 1000));
-    };
-
     const handleKicked = ({ motivo }: { motivo: string }) => {
-      socketService.offNewBid(handleNewBid);
       socketService.offKicked();
       socketService.offAuctionEnded();
       socketService.disconnect();
@@ -162,26 +177,20 @@ export default function LiveAuction() {
       Alert.alert(
         soyGanador ? '🏆 ¡Ganaste!' : 'Subasta finalizada',
         soyGanador
-          ? `Ganaste el artículo por $${Number(data.finalAmount).toLocaleString('es-AR')}. Podés ver tu compra en "Mis Compras".`
-          : `La subasta ha finalizado. Monto final: $${Number(data.finalAmount).toLocaleString('es-AR')}.`,
-        [{ text: 'Aceptar', onPress: () => router.back() }],
+          ? `Ganaste un artículo por $${Number(data.finalAmount).toLocaleString('es-AR')}.`
+          : `Un artículo de la subasta ha sido vendido por $${Number(data.finalAmount).toLocaleString('es-AR')}.`,
+        [{ text: 'Aceptar' }],
       );
     };
 
-    socketService.onNewBid(handleNewBid);
     socketService.onKicked(handleKicked);
     socketService.onAuctionEnded(handleAuctionEnded);
 
     return () => {
-      socketService.offNewBid(handleNewBid);
       socketService.offKicked();
       socketService.offAuctionEnded();
-      if (activeItem) {
-        socketService.leaveAuction(activeItem.id);
-      }
       socketService.disconnect();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const isExempt = user?.category === 'Oro' || user?.category === 'Platino';
@@ -280,7 +289,31 @@ export default function LiveAuction() {
         />
         
         <View className="p-6 -mt-6 bg-gray-900 rounded-t-3xl">
-          <Text className="text-2xl font-bold text-white mb-4">{currentItem.title}</Text>
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-2xl font-bold text-white flex-1 mr-2">{currentItem.title}</Text>
+            
+            <View className="flex-row gap-2">
+              <TouchableOpacity 
+                onPress={() => loadItem(currentIndex - 1, catalogItems)}
+                disabled={currentIndex === 0}
+                className={`w-8 h-8 rounded-full items-center justify-center ${currentIndex === 0 ? 'bg-gray-800' : 'bg-gray-700'}`}
+              >
+                <ChevronLeft color={currentIndex === 0 ? '#4B5563' : 'white'} size={18} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={() => loadItem(currentIndex + 1, catalogItems)}
+                disabled={currentIndex === catalogItems.length - 1}
+                className={`w-8 h-8 rounded-full items-center justify-center ${currentIndex === catalogItems.length - 1 ? 'bg-gray-800' : 'bg-gray-700'}`}
+                style={{ transform: [{ rotate: '180deg' }] }}
+              >
+                <ChevronLeft color={currentIndex === catalogItems.length - 1 ? '#4B5563' : 'white'} size={18} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-gray-400 text-sm">Lote #{String(currentIndex + 1).padStart(3, '0')} de {catalogItems.length}</Text>
+          </View>
           
           <View className="bg-gray-800 rounded-2xl p-6 mb-6 items-center">
             {isAuthenticated ? (

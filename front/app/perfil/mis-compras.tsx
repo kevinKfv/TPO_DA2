@@ -112,15 +112,31 @@ export default function MisCompras() {
                       </View>
                     ) : null}
 
-                    {/* Precio */}
+                    {/* Precio y Botón de Pago */}
                     <View className="flex-row justify-between items-center pt-3 border-t border-gray-100">
-                      <View className="flex-row items-center gap-1 px-2 py-1 bg-green-100 rounded-full">
-                        <Trophy color="#16a34a" size={12} />
-                        <Text className="text-green-700 text-xs font-semibold">Puja ganadora</Text>
+                      <View>
+                        <View className="flex-row items-center gap-1 px-2 py-1 bg-green-100 rounded-full mb-1 self-start">
+                          <Trophy color="#16a34a" size={12} />
+                          <Text className="text-green-700 text-xs font-semibold">Puja ganadora</Text>
+                        </View>
+                        <Text className="font-bold text-xl text-[#6A4F99]">
+                          ${Number(compra.amount).toLocaleString('es-AR')}
+                        </Text>
                       </View>
-                      <Text className="font-bold text-xl text-[#6A4F99]">
-                        ${Number(compra.amount).toLocaleString('es-AR')}
-                      </Text>
+                      
+                      <TouchableOpacity 
+                        className="bg-[#C9A063] px-4 py-2 rounded-lg flex-row items-center gap-2"
+                        onPress={() => {
+                          if (window.confirm) {
+                            window.confirm(`¿Proceder al pago de $${Number(compra.amount).toLocaleString('es-AR')} por el artículo ${compra.catalogItem?.title}? (Simulación)`);
+                          } else {
+                            alert('Pago simulado con éxito.');
+                          }
+                        }}
+                      >
+                        <Tag color="white" size={16} />
+                        <Text className="text-white font-bold">Pagar</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </View>

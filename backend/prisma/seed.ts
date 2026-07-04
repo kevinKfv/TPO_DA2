@@ -34,7 +34,7 @@ async function main() {
   // ─── 2. RESET IDENTIDAD personas ────────────────────────────────────────
   // Garantiza que el primer empleado reciba identificador=1.
   // auth.service.ts tiene EMPLEADO_DEFAULT = 1 hardcodeado como verificador de clientes.
-  await prisma.$queryRawUnsafe(`DBCC CHECKIDENT ('personas', RESEED, 0)`);
+  await prisma.$queryRawUnsafe(`ALTER SEQUENCE personas_identificador_seq RESTART WITH 1`);
 
   // ─── 3. SECTORES Y SEGURO BASE ──────────────────────────────────────────
   const sectorAdmin = await prisma.sectores.create({
@@ -121,6 +121,7 @@ async function main() {
           email: 'demo@hammer.com',
           passwordHash: hashDemo,
           debeCambiarClave: 'no',
+          estadoCredencial: 'activo',
         },
       },
     },
@@ -214,11 +215,11 @@ async function main() {
       tieneDeposito: 'si',
       seguridadPropia: 'si',
       categoria: 'comun',
-      moneda: 'pesos',
       extra_subastas: {
         create: {
           titulo: 'Subasta de Arte Moderno',
           descripcion: 'Selección curada de pinturas y esculturas de artistas contemporáneos argentinos.',
+          moneda: 'pesos',
         },
       },
     },
@@ -236,11 +237,11 @@ async function main() {
       tieneDeposito: 'si',
       seguridadPropia: 'si',
       categoria: 'oro',
-      moneda: 'USD',
       extra_subastas: {
         create: {
           titulo: 'Subasta Exclusiva de Joyas y Relojes',
           descripcion: 'Piezas únicas de alta joyería y relojería de lujo. Acceso exclusivo categoría Oro y Platino.',
+          moneda: 'USD',
         },
       },
     },
@@ -258,11 +259,11 @@ async function main() {
       tieneDeposito: 'si',
       seguridadPropia: 'no',
       categoria: 'comun',
-      moneda: 'pesos',
       extra_subastas: {
         create: {
           titulo: 'Subasta de Antigüedades del Río de la Plata',
           descripcion: 'Colección de antigüedades y objetos históricos del patrimonio rioplatense.',
+          moneda: 'pesos',
         },
       },
     },
