@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.API_BASE_URL ?? 'http://192.168.1.55:4000/api';
+export const API_BASE_URL = process.env.API_BASE_URL ?? 'https://entrega-final-production-d7ad.up.railway.app/api';
 
 let manejadorSesionExpirada: (() => void) | null = null;
 
