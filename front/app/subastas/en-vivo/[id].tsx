@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, FlatList, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, FlatList, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, HandCoins, CreditCard, FileText, Building2, ChevronDown } from 'lucide-react-native';
 import { Image } from 'expo-image';
@@ -11,7 +11,7 @@ import { API_BASE_URL } from '@/app/lib/api';
 const API_URL = API_BASE_URL.replace('/api', '');
 
 export default function LiveAuction() {
-  const { id } = useLocalSearchParams();
+  const { id, itemId } = useLocalSearchParams<{ id: string; itemId?: string }>();
   const router = useRouter();
   const { user, token, isAuthenticated } = useAuth();
   
@@ -47,7 +47,7 @@ export default function LiveAuction() {
       .catch(() => {});
   }, [isAuthenticated, token]);
 
-  const [endTime, setEndTime] = useState(() => new Date(Date.now() + 60 * 1000));
+  const [endTime, setEndTime] = useState(() => new Date(Date.now() + 3 * 60 * 1000));
   const [tiempoAgotado, setTiempoAgotado] = useState(false);
 
   useEffect(() => {
@@ -73,6 +73,30 @@ export default function LiveAuction() {
     return () => clearInterval(interval);
   }, [endTime]);
 
+  // Timer propio de 1 minuto: cada vez que es "tu turno" para pujar (no estás bloqueado
+  // esperando a otro postor) tenés 1 minuto. Si se agota sin que puje, se bloquea el botón
+  // (mismo estado que "esperando otro pujador"), pero esto es local a este usuario —
+  // no toca el timer general de 3 min del ítem, que sigue tomando la última puja real.
+  const [miTiempoRestante, setMiTiempoRestante] = useState(60);
+
+  useEffect(() => {
+    if (esperandoOtroPujador) return;
+
+    setMiTiempoRestante(60);
+    const interval = setInterval(() => {
+      setMiTiempoRestante(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setEsperandoOtroPujador(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [esperandoOtroPujador]);
+
   useEffect(() => {
     const fetchAuction = async () => {
       try {
@@ -80,9 +104,11 @@ export default function LiveAuction() {
         if (res.ok) {
           const data = await res.json();
           if (data.catalogItems && data.catalogItems.length > 0) {
-            const firstItem = data.catalogItems[0];
+            const firstItem = itemId
+              ? (data.catalogItems.find((it: any) => it.id === itemId) ?? data.catalogItems[0])
+              : data.catalogItems[0];
             setActiveItem(firstItem);
-            
+
             setCurrentItem(prev => ({
               ...prev,
               title: firstItem.title,
@@ -98,6 +124,7 @@ export default function LiveAuction() {
             if (bidsRes.ok) {
               const bidsData = await bidsRes.json();
               if (bidsData.length > 0) {
+                setEndTime(new Date(Date.now() + 3 * 60 * 1000));
                 setCurrentItem(prev => ({
                   ...prev,
                   currentBid: bidsData[0].amount,
@@ -142,9 +169,11 @@ export default function LiveAuction() {
       setRecentBids(prev =>
         [{ user: bid.user?.firstName ? `${bid.user.firstName}***` : 'Desconocido', amount: bid.amount, id: bid.id || Date.now().toString() }, ...prev].slice(0, 5)
       );
-      // Cualquier puja nueva (propia o ajena) libera el bloqueo de turno
-      setEsperandoOtroPujador(false);
-      setEndTime(new Date(Date.now() + 60 * 1000));
+      // Solo la puja de OTRO participante libera el bloqueo de turno
+      if (!(user?.id && bid.user?.id && String(user.id) === String(bid.user.id))) {
+        setEsperandoOtroPujador(false);
+      }
+      setEndTime(new Date(Date.now() + 3 * 60 * 1000));
     };
 
     const handleKicked = ({ motivo }: { motivo: string }) => {
@@ -182,13 +211,15 @@ export default function LiveAuction() {
       socketService.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, itemId]);
 
+  const esPropio = !!(activeItem?.ownerId && user?.id && String(user.id) === String(activeItem.ownerId));
   const isExempt = user?.category === 'Oro' || user?.category === 'Platino';
   const minBid = currentItem.currentBid + (currentItem.basePrice * 0.01);
   const maxBid = currentItem.currentBid + (currentItem.basePrice * 0.20);
 
   const handleBid = async () => {
+    if (esPropio) return;
     const amount = Number(bidAmount);
     if (!amount || amount <= currentItem.currentBid) {
       setErrorMsg("La puja debe ser mayor a la actual.");
@@ -257,7 +288,10 @@ export default function LiveAuction() {
   };
 
   return (
-    <View className="flex-1 bg-gray-900">
+    <KeyboardAvoidingView
+      className="flex-1 bg-gray-900"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Header */}
       <View className="pt-12 pb-4 px-4 flex-row items-center justify-between border-b border-gray-800 bg-gray-900 z-10">
         <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 items-center justify-center bg-gray-800 rounded-full">
@@ -272,7 +306,7 @@ export default function LiveAuction() {
         <View className="w-10 h-10" />
       </View>
 
-      <ScrollView className="flex-1" contentContainerClassName="pb-32">
+      <ScrollView className="flex-1">
         <Image
           source={{ uri: currentItem.image ?? "https://images.unsplash.com/photo-1609166816663-3dff820fc5fa?auto=format&fit=crop&w=800&q=80" }}
           className="w-full h-72"
@@ -328,12 +362,21 @@ export default function LiveAuction() {
       </ScrollView>
 
       {/* Bid Actions */}
-      <View className="absolute bottom-0 w-full bg-gray-900 border-t border-gray-800 p-4 pb-8">
-        {isAuthenticated ? (
+      <View className="bg-gray-900 border-t border-gray-800 p-4 pb-8">
+        {esPropio ? (
+          <View className="items-center py-2">
+            <Text className="text-gray-400 text-center">No podés pujar por tu propio artículo.</Text>
+          </View>
+        ) : isAuthenticated ? (
           <>
             {esperandoOtroPujador && (
               <Text className="text-yellow-400 text-xs mb-2 text-center font-semibold">
-                Esperando que otro usuario puje para continuar...
+                Esperando a que alguien más puje...
+              </Text>
+            )}
+            {!esperandoOtroPujador && (
+              <Text className="text-orange-400 text-xs mb-2 text-center font-semibold">
+                Tenés {`${Math.floor(miTiempoRestante / 60)}:${String(miTiempoRestante % 60).padStart(2, '0')}`} para pujar
               </Text>
             )}
             {!isExempt && !esperandoOtroPujador && (
@@ -386,7 +429,7 @@ export default function LiveAuction() {
             )}
 
             <View className="flex-row items-center gap-3">
-              <View className={`flex-1 flex-row items-center rounded-xl px-4 h-14 border ${(tiempoAgotado || esperandoOtroPujador) ? 'bg-gray-900 border-gray-800' : 'bg-gray-800 border-gray-700'}`}>
+              <View className={`flex-1 flex-row items-center justify-center rounded-xl px-4 h-14 border ${(tiempoAgotado || esperandoOtroPujador) ? 'bg-gray-900 border-gray-800' : 'bg-gray-800 border-gray-700'}`}>
                 <Text className="text-gray-400 text-lg mr-2">$</Text>
                 <TextInput
                   value={bidAmount}
@@ -394,8 +437,8 @@ export default function LiveAuction() {
                   placeholder={(tiempoAgotado || esperandoOtroPujador) ? '—' : 'Monto a pujar'}
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
-                  className="flex-1 text-white text-lg"
-                  style={{ paddingVertical: 0, height: 56, textAlignVertical: 'center' }}
+                  className="text-white text-lg text-center"
+                  style={{ paddingVertical: 0, height: 56, textAlignVertical: 'center', minWidth: 100 }}
                   editable={!isSubmitting && !tiempoAgotado && !esperandoOtroPujador}
                 />
               </View>
@@ -457,6 +500,6 @@ export default function LiveAuction() {
           />
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

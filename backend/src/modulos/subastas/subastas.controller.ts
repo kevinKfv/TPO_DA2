@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AuthRequest } from '../../middlewares/autenticacion';
+import { ahoraComparable } from '../../utilidades/horarioArgentina';
 
 const prisma = new PrismaClient();
 
@@ -31,7 +32,7 @@ function mergeDateTime(fecha: Date | null, hora: Date): Date {
 function deriveStatus(subasta: any): string {
   if (!subasta.estado) return 'pendiente';
   const extra = subasta.extra_subastas?.[0];
-  const now = new Date();
+  const now = ahoraComparable();
   if (extra?.fechaFin && new Date(extra.fechaFin) < now) return 'cerrada';
   const startDate = mergeDateTime(subasta.fecha, subasta.hora);
   if (startDate > now) return 'pendiente';
@@ -47,6 +48,8 @@ function mapItem(item: any, subastaId: string) {
   return {
     id: item.identificador.toString(),
     auctionId: subastaId,
+    productId: productoId,
+    ownerId: item.productos?.duenio?.toString() ?? null,
     title: item.productos?.descripcionCatalogo ?? '',
     description: item.productos?.descripcionCompleta ?? '',
     startingPrice: Number(item.precioBase),
@@ -108,9 +111,9 @@ const includeSubasta = {
       itemsCatalogo: {
         orderBy: { identificador: 'asc' as const },
         include: {
-          productos: {
-            include: { fotos: { take: 1, orderBy: { identificador: 'asc' } } },
-          },
+        productos: {
+        include: { fotos: { take: 1, orderBy: { identificador: 'asc' as const } } },
+        },
           pujos: true,
         },
       },
@@ -150,7 +153,7 @@ export const getCategorias = async (req: AuthRequest, res: Response) => {
 export const getAuctions = async (req: AuthRequest, res: Response) => {
   try {
     const permitidas = categoriasPermitidas((req as any).user?.category);
-    const ahora = new Date();
+    const ahora = ahoraComparable();
     const subastas = await prisma.subastas.findMany({
       where: {
         ...(permitidas ? { categoria: { in: permitidas } } : { categoria: { not: null } }),
@@ -184,7 +187,7 @@ export const getAuctionById = async (req: Request, res: Response) => {
 
 export const createAuction = async (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, startDate, endDate, category } = req.body;
+    const { title, description, startDate, endDate, category, goodsCategory } = req.body;
 
     const subasta = await prisma.subastas.create({
       data: {
@@ -196,6 +199,7 @@ export const createAuction = async (req: AuthRequest, res: Response) => {
           create: {
             titulo: title,
             descripcion: description ?? null,
+            categoriaBien: goodsCategory ?? null,
           },
         },
         catalogos: {

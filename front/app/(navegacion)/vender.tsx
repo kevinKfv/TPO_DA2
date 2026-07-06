@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import * as ImagePicker from 'expo-image-picker';
 import { apiPost, apiGet } from '@/app/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { EncabezadoTab } from '@/components/EncabezadoTab';
 
 interface CategoriaArticulo {
   valor: string;
@@ -127,6 +128,20 @@ export default function SellItem() {
         categoria: formData.categoria,
       }, token || '', 60000);
 
+      // Reseteamos el formulario para que la próxima vez que se entre a "Vender" esté en blanco
+      // (esta pantalla no se desmonta al cambiar de tab, así que el estado quedaría viejo si no).
+      setStep(1);
+      setFormData({
+        title: '',
+        description: '',
+        categoria: '',
+        agreedToTerms: false,
+        artistOrDesigner: '',
+        date: '',
+        history: '',
+      });
+      setUploadedImages([]);
+
       router.replace('/perfil/mis-ventas');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'No se pudo enviar el artículo.');
@@ -137,22 +152,26 @@ export default function SellItem() {
 
   if (submitting) {
     return (
-      <View className="flex-1 bg-gray-50 justify-center items-center">
-        <ActivityIndicator size="large" color="#6A4F99" />
-        <Text className="text-[#A08C79] mt-4">Enviando solicitud...</Text>
+      <View className="flex-1 bg-gray-50">
+        <EncabezadoTab titulo="Vender" />
+        <View className="flex-1 justify-center items-center">
+          <ActivityIndicator size="large" color="#6A4F99" />
+          <Text className="text-[#A08C79] mt-4">Enviando solicitud...</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <ScrollView ref={scrollRef} className="flex-1 bg-gray-50" showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View className="bg-white pt-14 pb-4 px-4 border-b border-gray-200">
-        <Text className="text-2xl font-bold text-[#333F48]">Vender un Artículo</Text>
-        <Text className="text-sm text-[#A08C79] mt-1">Consigná tu pieza para subasta</Text>
+    <View className="flex-1 bg-gray-50">
+    <EncabezadoTab titulo="Vender" />
+    <ScrollView ref={scrollRef} className="flex-1 bg-gray-50 px-4 py-4" showsVerticalScrollIndicator={false}>
+      <View className="mb-4">
+        <Text className="text-3xl font-bold text-[#333F48]">Vender un Artículo</Text>
+        <Text className="text-[#A08C79] mt-1">Consigná tu pieza para subasta</Text>
       </View>
 
-      <View className="px-4 py-6">
+      <View className="py-2">
         {/* Progreso */}
         <View className="flex-row items-center justify-center mb-8">
           <View className="items-center flex-row">
@@ -454,5 +473,6 @@ export default function SellItem() {
         </View>
       </Modal>
     </ScrollView>
+    </View>
   );
 }

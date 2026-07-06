@@ -1,4 +1,5 @@
 import { prisma } from '../../configuracion/baseDatos';
+import { intentarAsignarInmediato } from '../../utilidades/pollingAsignacion';
 
 function getMimeType(buf: Buffer): string {
   if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
@@ -15,7 +16,7 @@ function fotoABase64(raw: any): string | null {
 }
 
 export class ArticlesService {
-  async submitArticle(data: { userId: number, descripcionCatalogo: string, descripcionCompleta: string, fotosBase64?: string[], categoria?: string }) {
+  async submitArticle(data: { userId: number, descripcionCatalogo: string, descripcionCompleta: string, fotosBase64?: string[], categoria: string }) {
     // Verificamos si el usuario es dueño
     let duenio = await prisma.duenios.findUnique({
       where: { identificador: data.userId }
@@ -73,7 +74,14 @@ export class ArticlesService {
     }
 
     await prisma.extra_solicitudesVenta.create({
-      data: { cliente: data.userId, producto: producto.identificador, estado: 'pendiente', categoria: data.categoria ?? null }
+      data: { cliente: data.userId, producto: producto.identificador, estado: 'pendiente', categoria: data.categoria }
+    });
+
+    await prisma.notificaciones.create({
+      data: {
+        identificadorPersona: data.userId,
+        mensaje: '¡Hemos recibido tu solicitud de venta! Por favor, acercanos tu producto a la sucursal de Hammer para poder revisarlo y presupuestarlo. Dirección: Independencia 15510. Dentro del horario: 9 am a 16 hs.',
+      },
     });
 
     return producto;
@@ -104,10 +112,24 @@ export class ArticlesService {
     if (solicitud.productos.duenio !== userId) throw new Error('No tenés permiso');
     if (solicitud.estado !== 'aprobado') throw new Error('La solicitud no está en estado aprobado');
 
-    await prisma.extra_solicitudesVenta.update({
-      where: { producto: productoId },
-      data: { estado: 'a_subastar', fechaActualizacion: new Date() }
-    });
+    await prisma.$transaction([
+      prisma.extra_solicitudesVenta.update({
+        where: { producto: productoId },
+        data: { estado: 'a_subastar', fechaActualizacion: new Date() }
+      }),
+      prisma.productos.update({
+        where: { identificador: productoId },
+        data: { disponible: 'si' }
+      }),
+    ]);
+
+    const categoria = solicitud.categoria ?? 'Otros';
+    const asignado = await intentarAsignarInmediato({ ...solicitud, estado: 'a_subastar' });
+    if (asignado) {
+      console.log(`[Aceptar] Producto ${productoId} agregado al catálogo OK correctamente`);
+    } else {
+      console.log(`[Aceptar] No hay subasta disponible para la categoría "${categoria}" y el producto ${productoId}. Queda a la espera de asignación.`);
+    }
   }
 
   async aprobarSolicitud(productoId: number, precioBase: number, comision: number) {

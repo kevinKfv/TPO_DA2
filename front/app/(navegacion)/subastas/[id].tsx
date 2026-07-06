@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Calendar, MapPin, Package, ChevronLeft, Play, Users, Gavel, Tag, Clock } from 'lucide-react-native';
+import { Calendar, MapPin, Package, ChevronLeft, Users, Gavel, Tag, Clock } from 'lucide-react-native';
 import { useAuth } from '@/context/AuthContext';
-import { apiGet, apiPost, API_BASE_URL } from '@/app/lib/api';
+import { apiGet, API_BASE_URL } from '@/app/lib/api';
 import { TarjetaArticulo } from '@/components/TarjetaArticulo';
+import { comoInstanteLocal } from '@/utils/fechasSubasta';
 
 export default function DetallSubasta() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   const [subasta, setSubasta] = useState<any>(null);
   const [cargando, setCargando] = useState(true);
-  const [registrando, setRegistrando] = useState(false);
 
   useEffect(() => {
     const cargar = async () => {
@@ -28,27 +28,6 @@ export default function DetallSubasta() {
     };
     cargar();
   }, [id]);
-
-  const handleParticipar = async () => {
-    if (!token) return;
-
-    setRegistrando(true);
-    try {
-      await apiPost(`/subastas/${id}/registrar`, {}, token);
-      router.push(`/subastas/en-vivo/${id}`);
-    } catch (error: any) {
-      const msg = error.body?.error || error.message || error.error || '';
-      if (msg.includes('already registered')) {
-        router.push(`/subastas/en-vivo/${id}`);
-      } else if (msg.includes('método de pago')) {
-        Alert.alert('Método de pago requerido', msg, [{ text: 'Entendido' }]);
-      } else {
-        Alert.alert('Error', msg || 'No se pudo registrar a la subasta');
-      }
-    } finally {
-      setRegistrando(false);
-    }
-  };
 
   if (cargando) {
     return (
@@ -77,10 +56,8 @@ export default function DetallSubasta() {
   const items: any[] = subasta.catalogItems ?? [];
 
   const now = new Date();
-  const hoyStr = now.toISOString().split('T')[0];
-  const inicioStr = new Date(subasta.startDate).toISOString().split('T')[0];
-  const haEmpezado = inicioStr <= hoyStr;
-  const haTerminado = subasta.endDate ? new Date(subasta.endDate) < now : subasta.status === 'cerrada';
+  const finSubasta = comoInstanteLocal(subasta.endDate);
+  const haTerminado = finSubasta ? finSubasta < now : subasta.status === 'cerrada';
 
   return (
     <ScrollView className="flex-1 bg-gray-50" showsVerticalScrollIndicator={false}>
@@ -164,42 +141,11 @@ export default function DetallSubasta() {
           )}
         </View>
 
-        {haTerminado ? (
+        {haTerminado && (
           <View className="mt-2 py-3 px-4 bg-white/10 rounded-xl border border-white/20">
             <Text className="text-white/70 text-center text-sm">Esta subasta ha finalizado</Text>
           </View>
-        ) : isAuthenticated ? (
-          haEmpezado ? (
-            <TouchableOpacity
-              onPress={handleParticipar}
-              disabled={registrando}
-              className={`flex-row items-center justify-center gap-2 py-4 rounded-xl mt-2 ${enVivo ? 'bg-red-500' : 'bg-white/20 border border-white/40'}`}
-            >
-              {registrando ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <>
-                  <Play color="white" size={20} />
-                  <Text className="text-white font-bold text-lg">
-                    {enVivo ? 'Unirse EN VIVO' : 'Participar en Subasta'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <View className="mt-2 py-3 px-4 bg-white/10 rounded-xl border border-white/20">
-              <Text className="text-white/70 text-center text-sm">Disponible el {fecha}</Text>
-            </View>
-          )
-        ) : enVivo ? (
-          <TouchableOpacity
-            onPress={() => router.push('/(autenticacion)/iniciar-sesion')}
-            className="flex-row items-center justify-center gap-2 py-4 rounded-xl bg-red-500 mt-2"
-          >
-            <Play color="white" size={20} />
-            <Text className="text-white font-bold text-lg">Iniciar sesión para pujar</Text>
-          </TouchableOpacity>
-        ) : null}
+        )}
       </View>
 
       {/* Descripción */}
